@@ -16,6 +16,8 @@ services:
       - "9090:9090"
     networks:
       - monitoring
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   grafana:
@@ -48,21 +50,25 @@ services:
 
   node-exporter:
     image: quay.io/prometheus/node-exporter:latest
+    container_name: node-exporter
     pid: "host"
     network_mode: "host"
     volumes:
       - "/:/host:ro,rslave"
     command:
       - "--path.rootfs=/host"
+    restart: unless-stopped
 
   nginx-exporter:
     image: nginx/nginx-prometheus-exporter:latest
+    container_name: nginx-exporter
     ports:
       - "9113:9113"
     command:
       - "-nginx.scrape-uri=http://nginx/nginx_status"
     networks:
       - monitoring
+    restart: unless-stopped
 
 volumes:
   prometheus_data:
