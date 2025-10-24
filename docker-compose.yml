@@ -44,6 +44,8 @@ services:
     ports:
       - "9104:9104"
     restart: unless-stopped
+    networks:
+      - monitoring
 
   
   node-exporter:
@@ -54,6 +56,8 @@ services:
       - '/:/host:ro,rslave'
     command:
       - '--path.rootfs=/host'
+    networks:
+      - monitoring
 
   nginx-exporter:
     image: nginx/nginx-prometheus-exporter:latest
@@ -61,6 +65,8 @@ services:
       - "9113:9113"
     command:
       - '-nginx.scrape-uri=http://nginx/nginx_status'
+    networks:
+      - monitoring
 
 volumes:
   prometheus_data:
