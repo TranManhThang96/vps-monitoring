@@ -65,7 +65,7 @@ services:
     ports:
       - "9113:9113"
     command:
-      - "-nginx.scrape-uri=http://host.docker.internal:8080/nginx_status"
+      - "-nginx.scrape-uri=http://host.docker.internal/nginx_status"
     networks:
       - monitoring
     extra_hosts:
