@@ -39,9 +39,8 @@ services:
   mysqld-exporter:
     image: prom/mysqld-exporter:latest
     container_name: mysqld-exporter
-    command:
-      - "--mysqld.username=${MYSQL_USER}:${MYSQL_PASSWORD}"
-      - "--mysqld.address=${MYSQL_HOST}:${MYSQL_PORT}"
+    environment:
+      - DATA_SOURCE_NAME=${MYSQL_USER}:${MYSQL_PASSWORD}@(${MYSQL_HOST}:${MYSQL_PORT})/
     ports:
       - "9104:9104"
     networks:
@@ -71,7 +70,7 @@ services:
     networks:
       - monitoring
     extra_hosts:
-    - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:
