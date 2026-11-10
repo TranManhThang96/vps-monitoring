@@ -102,6 +102,8 @@ garage-status:
 
 garage-bucket:
 	@test -n "$(NAME)" || { echo "usage: make garage-bucket NAME=<bucket>"; exit 1; }
+	@printf '%s' "$(NAME)" | grep -Eq '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$$' \
+	  || { echo "NAME must be 3-63 chars: lowercase letters, digits, '.' and '-', starting and ending with a letter or digit"; exit 1; }
 	$(COMPOSE) exec garage /garage bucket create $(NAME)
 	$(COMPOSE) exec garage /garage bucket allow --read --write --owner $(NAME) --key $(GARAGE_ACCESS_KEY)
 

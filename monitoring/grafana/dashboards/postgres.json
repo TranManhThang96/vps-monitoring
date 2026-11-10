@@ -2580,25 +2580,11 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "irate(pg_stat_bgwriter_buffers_backend_total{instance=\"$instance\"}[5m])",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "buffers_backend",
-          "refId": "A"
-        },
-        {
           "expr": "irate(pg_stat_bgwriter_buffers_alloc_total{instance=\"$instance\"}[5m])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "buffers_alloc",
           "refId": "B"
-        },
-        {
-          "expr": "irate(pg_stat_bgwriter_buffers_backend_fsync_total{instance=\"$instance\"}[5m])",
-          "format": "time_series",
-          "intervalFactor": 1,
-          "legendFormat": "backend_fsync",
-          "refId": "C"
         },
         {
           "expr": "irate(pg_stat_checkpointer_buffers_written_total{instance=\"$instance\"}[5m])",

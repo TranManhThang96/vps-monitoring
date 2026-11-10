@@ -116,6 +116,9 @@ Cách cấu hình phía monitoring: xem `../monitoring/README.md`.
 
 - Dữ liệu nằm trong `./data` (biến `DATA_DIR`). Sao lưu Postgres bằng `pg_dump`, không copy file khi đang chạy.
 - Garage chạy single-node với `replication_factor = 1`: không có dự phòng. Hãy sao lưu `data/garage` hoặc nhân bản object sang nơi khác.
+- Redis ghi AOF vào `data/redis` (`--appendonly yes`). Sao lưu bằng cách chạy `docker compose exec redis redis-cli BGREWRITEAOF`, đợi xong rồi copy `data/redis`, hoặc dừng Redis (`make down-redis`) trước khi copy.
+- Log của mọi container xoay vòng (10 MB × 3 file) nên không làm đầy ổ đĩa.
+- Postgres có `/dev/shm` 256 MB (`POSTGRES_SHM_SIZE`); Docker mặc định chỉ 64 MB, không đủ cho `shared_buffers=1GB` với truy vấn song song.
 - Garage không có web console. Dùng `aws s3`, `rclone` hoặc thư viện S3.
 - Đổi `POSTGRES_VERSION` sang major version mới cần dump/restore.
 - Không đổi `GARAGE_RPC_SECRET` sau lần chạy đầu tiên.

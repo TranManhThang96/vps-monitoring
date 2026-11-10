@@ -1,12 +1,25 @@
 # Monitoring stack on the shared network (created by ../infra: `make network`).
 # Settings come from .env (see .env.example). Exporters have no published ports:
-# Prometheus scrapes them over shared-net.
+# Prometheus scrapes them over shared-net. Prometheus and Grafana publish on
+# BIND_ADDR only (127.0.0.1 by default).
 
 name: monitoring
 
+# Without a cap, json-file logs grow until the disk is full.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# host.docker.internal = the docker0 address of the VPS. Pinned to the same
+# value node-exporter listens on, so the two cannot drift apart.
+x-host-gateway: &host-gateway
+  - "host.docker.internal:${HOST_GATEWAY_IP:-172.17.0.1}"
+
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.16.0}
     container_name: prometheus
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -15,36 +28,51 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-      - "--web.console.libraries=/etc/prometheus/console_libraries"
-      - "--web.console.templates=/etc/prometheus/consoles"
       - "--storage.tsdb.retention.time=200h"
+      - "--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-5GB}"
       - "--web.enable-lifecycle"
     ports:
-      - "9090:9090"
+      - "${BIND_ADDR:-127.0.0.1}:9090:9090"
     networks: [shared]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    extra_hosts: *host-gateway
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-1g}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:${GRAFANA_VERSION:-13.3.0}
     container_name: grafana
     ports:
-      - "4000:3000"
+      - "${BIND_ADDR:-127.0.0.1}:4000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env (make init generates it)}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
     networks: [shared]
+    mem_limit: ${GRAFANA_MEM_LIMIT:-512m}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
     restart: unless-stopped
 
   # Native MySQL on the VPS, reached through the host gateway.
   mysqld-exporter:
-    image: prom/mysqld-exporter:latest
+    image: prom/mysqld-exporter:${MYSQLD_EXPORTER_VERSION:-v0.21.0}
     container_name: mysqld-exporter
     command:
       - "--mysqld.username=${MYSQL_USER:?set MYSQL_USER in .env}"
@@ -52,14 +80,16 @@ services:
     environment:
       MYSQLD_EXPORTER_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
     networks: [shared]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    extra_hosts: *host-gateway
+    mem_limit: 128m
+    logging: *default-logging
     restart: unless-stopped
 
   # Host metrics: host network + host PID, so it does not join shared-net.
-  # Prometheus reaches it at host.docker.internal:9100.
+  # It listens only on the docker0 address: Prometheus reaches it at
+  # host.docker.internal:9100, and it is not reachable from the internet.
   node-exporter:
-    image: quay.io/prometheus/node-exporter:latest
+    image: quay.io/prometheus/node-exporter:${NODE_EXPORTER_VERSION:-v1.12.1}
     container_name: node-exporter
     pid: "host"
     network_mode: "host"
@@ -67,21 +97,25 @@ services:
       - "/:/host:ro,rslave"
     command:
       - "--path.rootfs=/host"
+      - "--web.listen-address=${HOST_GATEWAY_IP:-172.17.0.1}:9100"
+    mem_limit: 128m
+    logging: *default-logging
     restart: unless-stopped
 
   # Native nginx on the VPS (stub_status on port 9114).
   nginx-exporter:
-    image: nginx/nginx-prometheus-exporter:latest
+    image: nginx/nginx-prometheus-exporter:${NGINX_EXPORTER_VERSION:-1.5.3}
     container_name: nginx-exporter
     command:
-      - "-nginx.scrape-uri=http://host.docker.internal:9114/nginx_status"
+      - "--nginx.scrape-uri=http://host.docker.internal:9114/nginx_status"
     networks: [shared]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    extra_hosts: *host-gateway
+    mem_limit: 128m
+    logging: *default-logging
     restart: unless-stopped
 
   postgres-exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    image: quay.io/prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION:-v0.20.1}
     container_name: postgres-exporter
     environment:
       DATA_SOURCE_URI: shared-postgres:5432/postgres?sslmode=disable
@@ -93,15 +127,19 @@ services:
       - "--collector.postmaster"
       - "--collector.stat_checkpointer"
     networks: [shared]
+    mem_limit: 128m
+    logging: *default-logging
     restart: unless-stopped
 
   redis-exporter:
-    image: oliver006/redis_exporter:latest
+    image: oliver006/redis_exporter:${REDIS_EXPORTER_VERSION:-v1.97.0}
     container_name: redis-exporter
     environment:
       REDIS_ADDR: redis://shared-redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env (same value as ../infra/.env)}
     networks: [shared]
+    mem_limit: 128m
+    logging: *default-logging
     restart: unless-stopped
 
 volumes:

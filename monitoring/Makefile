@@ -19,7 +19,7 @@ PROM := $(COMPOSE) exec -T prometheus
 help:
 	@echo "Services: $(SERVICES)"
 	@echo ""
-	@echo "  make init                 create .env (Redis password copied from ../infra/.env) and secrets/"
+	@echo "  make init                 create .env (Redis password copied from ../infra/.env, Grafana password generated) and secrets/"
 	@echo "  make secrets              write secrets/garage_metrics_token from ../infra/.env"
 	@echo "  make up                   start all services   (make up SVC=grafana for one)"
 	@echo "  make down                 stop + remove all containers (volumes and network are kept)"
@@ -37,8 +37,10 @@ init:
 	@test -f $(INFRA_ENV) || { echo "$(INFRA_ENV) not found: run 'make init' in ../infra first"; exit 1; }
 	@redis=$$(grep -E '^REDIS_PASSWORD=' $(INFRA_ENV) | cut -d= -f2-); \
 	[ -n "$$redis" ] || { echo "REDIS_PASSWORD missing in $(INFRA_ENV)"; exit 1; }; \
-	REDIS_PW="$$redis" awk '/^REDIS_PASSWORD=/ { print "REDIS_PASSWORD=" ENVIRON["REDIS_PW"]; next } { print }' \
-	  .env.example > .env
+	REDIS_PW="$$redis" GRAFANA_PW="$$(openssl rand -hex 16)" awk \
+	  '/^REDIS_PASSWORD=/ { print "REDIS_PASSWORD=" ENVIRON["REDIS_PW"]; next } \
+	   /^GRAFANA_ADMIN_PASSWORD=/ { print "GRAFANA_ADMIN_PASSWORD=" ENVIRON["GRAFANA_PW"]; next } \
+	   { print }' .env.example > .env
 	@chmod 600 .env
 	@$(MAKE) --no-print-directory secrets
 	@echo ".env created. Still to fill in by hand:"

@@ -11,6 +11,13 @@
 #       external: true
 # and reach services by container name: shared-postgres:5432, shared-redis:6379, shared-garage:3900.
 
+# Without a cap, json-file logs grow until the disk is full.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 name: infra
 
 services:
@@ -36,6 +43,9 @@ services:
       - ${DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
     networks: [shared]
     mem_limit: ${POSTGRES_MEM_LIMIT:-3g}
+    # Docker's default /dev/shm is 64 MB; parallel queries and shared_buffers=1GB can exceed it.
+    shm_size: ${POSTGRES_SHM_SIZE:-256m}
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
@@ -62,6 +72,7 @@ services:
       - ${DATA_DIR:-./data}/redis:/data
     networks: [shared]
     mem_limit: ${REDIS_MEM_LIMIT:-768m}
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
@@ -89,6 +100,7 @@ services:
       - ${DATA_DIR:-./data}/garage/data:/var/lib/garage/data
     networks: [shared]
     mem_limit: ${GARAGE_MEM_LIMIT:-1g}
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "/garage", "status"]
       interval: 15s
