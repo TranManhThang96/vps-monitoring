@@ -1,0 +1,19 @@
+# Single-node Garage. Secrets (rpc_secret, admin_token, metrics_token) and the
+# default key/bucket are injected via environment variables in docker-compose.yml.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+
+rpc_bind_addr = "0.0.0.0:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "0.0.0.0:3900"
+
+[admin]
+api_bind_addr = "0.0.0.0:3903"
+# /metrics always needs a bearer token (GARAGE_METRICS_TOKEN), so other
+# containers on the shared network cannot read it anonymously.
+metrics_require_token = true

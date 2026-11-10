@@ -1,0 +1,102 @@
+# Shared infrastructure: PostgreSQL, Redis, Garage (S3-compatible object storage).
+# All settings come from .env (see .env.example). Manage with `make help`.
+#
+# Other docker apps join the shared network with:
+#   services:
+#     app:
+#       networks: [shared]
+#   networks:
+#     shared:
+#       name: shared-net      # value of SHARED_NETWORK
+#       external: true
+# and reach services by container name: shared-postgres:5432, shared-redis:6379, shared-garage:3900.
+
+name: infra
+
+services:
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-17}-alpine
+    container_name: shared-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-3GB}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ${DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+    networks: [shared]
+    mem_limit: ${POSTGRES_MEM_LIMIT:-3g}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:${REDIS_VERSION:-7}-alpine
+    container_name: shared-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+      REDIS_MAXMEMORY_POLICY: ${REDIS_MAXMEMORY_POLICY:-noeviction}
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --maxmemory "$$REDIS_MAXMEMORY" --maxmemory-policy "$$REDIS_MAXMEMORY_POLICY"
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ${DATA_DIR:-./data}/redis:/data
+    networks: [shared]
+    mem_limit: ${REDIS_MEM_LIMIT:-768m}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  garage:
+    image: dxflrs/garage:${GARAGE_VERSION:-v2.5.0}
+    container_name: shared-garage
+    restart: unless-stopped
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?set GARAGE_RPC_SECRET in .env}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:?set GARAGE_ADMIN_TOKEN in .env}
+      GARAGE_METRICS_TOKEN: ${GARAGE_METRICS_TOKEN:?set GARAGE_METRICS_TOKEN in .env}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_ACCESS_KEY:?set GARAGE_ACCESS_KEY in .env}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_SECRET_KEY:?set GARAGE_SECRET_KEY in .env}
+      GARAGE_DEFAULT_BUCKET: ${GARAGE_BUCKET:-default-bucket}
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${GARAGE_S3_PORT:-3900}:3900"
+      - "${BIND_ADDR:-127.0.0.1}:${GARAGE_ADMIN_PORT:-3903}:3903"
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - ${DATA_DIR:-./data}/garage/meta:/var/lib/garage/meta
+      - ${DATA_DIR:-./data}/garage/data:/var/lib/garage/data
+    networks: [shared]
+    mem_limit: ${GARAGE_MEM_LIMIT:-1g}
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+networks:
+  shared:
+    name: ${SHARED_NETWORK:-shared-net}
+    external: true
