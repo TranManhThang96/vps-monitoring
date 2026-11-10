@@ -22,10 +22,11 @@ Sửa `.env` trước khi chạy `make up` nếu muốn đổi phiên bản, por
 | Lệnh | Tác dụng |
 |---|---|
 | `make up` / `down` / `restart` / `logs` / `pull` | tất cả service |
-| `make up SVC=redis` hoặc `make up-redis` | một service (`postgres`, `redis`, `garage`) |
+| `make up SVC=redis` hoặc `make up-redis` | một service (`postgres`, `redis`, `garage`, `garage-webui`) |
 | `make down-garage` | xóa container của một service, giữ nguyên dữ liệu |
 | `make psql`, `make redis-cli`, `make garage-status` | mở shell / xem trạng thái |
 | `make garage-bucket NAME=photos` | tạo bucket và cấp quyền cho key mặc định |
+| `make garage-webui-auth` | đặt tài khoản đăng nhập web UI của Garage (in mật khẩu một lần) |
 | `make db-create NAME=myapp` | tạo user + database `myapp` với mật khẩu ngẫu nhiên |
 
 `make down` không bao giờ xóa network hay thư mục `./data`.
@@ -39,6 +40,7 @@ Các port chỉ bind vào `127.0.0.1` (biến `BIND_ADDR`), nên PHP/nginx nativ
 | PostgreSQL | `127.0.0.1:5432` | `shared-postgres:5432` |
 | Redis | `127.0.0.1:6379` (có mật khẩu) | `shared-redis:6379` |
 | Garage S3 | `http://127.0.0.1:3900`, region `garage`, path-style | `http://shared-garage:3900` |
+| Garage Web UI | `http://127.0.0.1:3909` | `http://shared-garage-webui:3909` |
 
 Cho một compose project khác tham gia network:
 
@@ -51,6 +53,22 @@ networks:
     name: shared-net   # giá trị SHARED_NETWORK trong .env
     external: true
 ```
+
+## Garage Web UI
+
+Container `garage-webui` ([khairul169/garage-webui](https://github.com/khairul169/garage-webui)) gọi admin API của Garage qua `shared-net` (`http://garage:3903`) bằng `GARAGE_ADMIN_TOKEN`. UI này quản lý được bucket, key, layout và xóa object, nên đăng nhập là bắt buộc: compose không khởi động nếu thiếu `GARAGE_WEBUI_AUTH`.
+
+```bash
+make garage-webui-auth    # ghi GARAGE_WEBUI_AUTH (user admin, bcrypt) vào .env, in mật khẩu một lần
+make up-garage-webui
+```
+
+Port chỉ bind `127.0.0.1:3909`. Hai cách truy cập:
+
+- SSH tunnel: `ssh -L 3909:127.0.0.1:3909 user@vps`, rồi mở `http://localhost:3909`.
+- Domain: nginx native proxy tới `127.0.0.1:3909` và cấp SSL (Let's Encrypt). Không đặt `BIND_ADDR=0.0.0.0`, vì biến này cũng áp cho Postgres và Redis.
+
+Trong `.env`, mỗi ký tự `$` của bcrypt hash phải viết thành `$$` (compose nội suy `$`). `make garage-webui-auth` đã làm việc này.
 
 ## Database riêng cho từng app
 
@@ -119,7 +137,7 @@ Cách cấu hình phía monitoring: xem `../monitoring/README.md`.
 - Redis ghi AOF vào `data/redis` (`--appendonly yes`). Sao lưu bằng cách chạy `docker compose exec redis redis-cli BGREWRITEAOF`, đợi xong rồi copy `data/redis`, hoặc dừng Redis (`make down-redis`) trước khi copy.
 - Log của mọi container xoay vòng (10 MB × 3 file) nên không làm đầy ổ đĩa.
 - Postgres có `/dev/shm` 256 MB (`POSTGRES_SHM_SIZE`); Docker mặc định chỉ 64 MB, không đủ cho `shared_buffers=1GB` với truy vấn song song.
-- Garage không có web console. Dùng `aws s3`, `rclone` hoặc thư viện S3.
+- Garage không có web console tích hợp, UI nằm ở service `garage-webui` (xem trên). Ngoài ra dùng `aws s3`, `rclone` hoặc thư viện S3.
 - Đổi `POSTGRES_VERSION` sang major version mới cần dump/restore.
 - Không đổi `GARAGE_RPC_SECRET` sau lần chạy đầu tiên.
 - Makefile đọc `SHARED_NETWORK` từ `.env` và ưu tiên hơn biến export trong shell, còn compose thì ưu tiên biến shell. Chỉ để các biến này trong `.env`, đừng export thêm.

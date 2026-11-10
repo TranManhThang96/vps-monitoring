@@ -1,4 +1,4 @@
-SERVICES := postgres redis garage
+SERVICES := postgres redis garage garage-webui
 
 -include .env
 SHARED_NETWORK ?= shared-net
@@ -13,7 +13,7 @@ PSQL := $(COMPOSE) exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRE
 
 .DEFAULT_GOAL := help
 .PHONY: help init network up down restart ps logs pull config \
-        psql db-create pg-monitor-user redis-cli garage-status garage-bucket $(addprefix up-,$(SERVICES)) \
+        psql db-create pg-monitor-user redis-cli garage-status garage-bucket garage-webui-auth $(addprefix up-,$(SERVICES)) \
         $(addprefix down-,$(SERVICES)) $(addprefix restart-,$(SERVICES)) \
         $(addprefix logs-,$(SERVICES))
 
@@ -33,6 +33,7 @@ help:
 	@echo "  make redis-cli            redis-cli shell"
 	@echo "  make garage-status        garage cluster status"
 	@echo "  make garage-bucket NAME=x create bucket x and grant the default key access"
+	@echo "  make garage-webui-auth    set a random web UI login in .env (prints the password once)"
 
 init:
 	@test ! -f .env || { echo ".env already exists, not overwriting"; exit 1; }
@@ -49,7 +50,7 @@ init:
 	  -e "s|^GARAGE_METRICS_TOKEN=.*|GARAGE_METRICS_TOKEN=$$(gen 32)|" \
 	  .env
 	@chmod 600 .env
-	@echo ".env created with generated secrets"
+	@echo ".env created with generated secrets. Run 'make garage-webui-auth' to set the web UI login."
 
 network:
 	@docker network inspect $(SHARED_NETWORK) >/dev/null 2>&1 \
@@ -106,6 +107,24 @@ garage-bucket:
 	  || { echo "NAME must be 3-63 chars: lowercase letters, digits, '.' and '-', starting and ending with a letter or digit"; exit 1; }
 	$(COMPOSE) exec garage /garage bucket create $(NAME)
 	$(COMPOSE) exec garage /garage bucket allow --read --write --owner $(NAME) --key $(GARAGE_ACCESS_KEY)
+
+# Writes GARAGE_WEBUI_AUTH (user admin, bcrypt) into .env and prints the password once.
+# `$` is doubled because compose interpolates .env values.
+garage-webui-auth:
+	@command -v htpasswd >/dev/null || { echo "htpasswd not found (apt install apache2-utils)"; exit 1; }
+	@test -f .env || { echo ".env missing, run 'make init' first"; exit 1; }
+	@set -e; umask 077; \
+	pw=$$(openssl rand -hex 12); \
+	hash=$$(htpasswd -nbBC 10 admin "$$pw" | tr -d '\n' | sed 's/\$$/$$$$/g'); \
+	grep -v '^GARAGE_WEBUI_AUTH=' .env > .env.tmp || true; \
+	printf 'GARAGE_WEBUI_AUTH=%s\n' "$$hash" >> .env.tmp; \
+	mv .env.tmp .env; chmod 600 .env; \
+	echo "Web UI login saved to .env. Save the password now, it is not stored anywhere:"; \
+	echo ""; \
+	echo "  user:     admin"; \
+	echo "  password: $$pw"; \
+	echo ""; \
+	echo "Apply: make up-garage-webui"
 
 # Creates a dedicated user + database named NAME, other users cannot connect to it.
 # The password is printed once and stored nowhere.

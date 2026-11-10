@@ -108,6 +108,27 @@ services:
       retries: 5
       start_period: 15s
 
+  # Web UI for Garage (bucket browser, keys, layout). Talks to the admin API over shared-net.
+  # Login is mandatory: the UI holds the admin token and can delete every bucket.
+  garage-webui:
+    image: khairul169/garage-webui:${GARAGE_WEBUI_VERSION:-1.1.0}
+    container_name: shared-garage-webui
+    restart: unless-stopped
+    depends_on:
+      garage:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://garage:3903
+      API_ADMIN_KEY: ${GARAGE_ADMIN_TOKEN}
+      S3_ENDPOINT_URL: http://garage:3900
+      S3_REGION: garage
+      AUTH_USER_PASS: ${GARAGE_WEBUI_AUTH:?run `make garage-webui-auth` to set GARAGE_WEBUI_AUTH in .env}
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${GARAGE_WEBUI_PORT:-3909}:3909"
+    networks: [shared]
+    mem_limit: ${GARAGE_WEBUI_MEM_LIMIT:-128m}
+    logging: *default-logging
+
 networks:
   shared:
     name: ${SHARED_NETWORK:-shared-net}
