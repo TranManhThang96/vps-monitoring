@@ -2,3 +2,5 @@ infra/.env
 infra/data/
 monitoring/.env
 monitoring/secrets/
+agent/.env
+agent/data/
