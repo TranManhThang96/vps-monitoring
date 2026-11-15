@@ -6,6 +6,11 @@ PostgreSQL, Redis và Garage (lưu trữ tương thích S3) chạy trên một D
 Không dùng MinIO: bản community đã bị archive ngày 2026-04-25 (không còn bản vá bảo mật).
 Garage là một binary tĩnh, RAM khi rảnh dưới 100 MB.
 
+Postgres dùng image `pgvector/pgvector:0.8.7-pg17` (Postgres 17 chính thức + extension `vector`)
+thay vì `postgres:17-alpine`, để app RAG như `../chat-app` lưu embedding ngay trong database chung.
+Cùng major version và cùng định dạng data directory nên `./data/postgres` cũ dùng lại được; image
+Debian nên uid của user `postgres` đổi từ 70 (Alpine) sang 999, entrypoint tự `chown` lại thư mục.
+
 ## Cài đặt
 
 ```bash
@@ -17,6 +22,29 @@ make ps
 
 Sửa `.env` trước khi chạy `make up` nếu muốn đổi phiên bản, port hoặc giới hạn bộ nhớ.
 
+### Đổi image Postgres khi `.env` đã có
+
+`make init` chỉ dùng cho lần đầu: nếu `.env` tồn tại nó thoát ngay với
+`".env already exists, not overwriting"` và không sửa gì. Không cần chạy lại nó để đổi image, vì
+`docker-compose.yml` đã có default `pgvector/pgvector:0.8.7-pg17`:
+
+```bash
+cd infra
+docker compose config | grep 'pgvector/pgvector'   # image hiệu lực
+docker compose pull postgres
+docker compose up -d postgres                      # recreate, data/ giữ nguyên
+```
+
+Chỉ khi muốn ghim cứng trong `.env` thì thêm/sửa đúng một dòng (và bỏ biến cũ `POSTGRES_VERSION`
+nếu còn, nó không còn được đọc):
+
+```bash
+echo 'POSTGRES_IMAGE=pgvector/pgvector:0.8.7-pg17' >> .env
+sed -i '/^POSTGRES_VERSION=/d' .env
+```
+
+Đổi image sang major version khác thì phải dump/restore, không chỉ đổi dòng này.
+
 ## Điều khiển
 
 | Lệnh | Tác dụng |
@@ -27,7 +55,7 @@ Sửa `.env` trước khi chạy `make up` nếu muốn đổi phiên bản, por
 | `make psql`, `make redis-cli`, `make garage-status` | mở shell / xem trạng thái |
 | `make garage-bucket NAME=photos` | tạo bucket và cấp quyền cho key mặc định |
 | `make garage-webui-auth` | đặt tài khoản đăng nhập web UI của Garage (in mật khẩu một lần) |
-| `make db-create NAME=myapp` | tạo user + database `myapp` với mật khẩu ngẫu nhiên |
+| `make db-create NAME=myapp` | tạo user + database `myapp` với mật khẩu ngẫu nhiên, bật extension `vector` |
 
 `make down` không bao giờ xóa network hay thư mục `./data`.
 
@@ -87,7 +115,8 @@ Lệnh này (Postgres phải đang chạy):
 3. Tạo user `myapp` (không phải superuser, không có quyền tạo database hay user khác) với mật khẩu ngẫu nhiên 32 ký tự hex.
 4. Tạo database `myapp` với chủ sở hữu là `myapp`.
 5. Thu hồi quyền `CONNECT` của mọi user khác trên database này. Mặc định Postgres cho phép mọi user kết nối vào mọi database, bước này là bước cô lập thật sự.
-6. In user, mật khẩu và chuỗi kết nối **một lần duy nhất**. Mật khẩu không được lưu ở đâu, hãy chép vào `.env` của app ngay.
+6. Bật extension `vector` (pgvector) trong database mới, sẵn cho app RAG.
+7. In user, mật khẩu và chuỗi kết nối **một lần duy nhất**. Mật khẩu không được lưu ở đâu, hãy chép vào `.env` của app ngay.
 
 Ví dụ cấu hình Laravel:
 
@@ -138,6 +167,6 @@ Cách cấu hình phía monitoring: xem `../monitoring/README.md`.
 - Log của mọi container xoay vòng (10 MB × 3 file) nên không làm đầy ổ đĩa.
 - Postgres có `/dev/shm` 256 MB (`POSTGRES_SHM_SIZE`); Docker mặc định chỉ 64 MB, không đủ cho `shared_buffers=1GB` với truy vấn song song.
 - Garage không có web console tích hợp, UI nằm ở service `garage-webui` (xem trên). Ngoài ra dùng `aws s3`, `rclone` hoặc thư viện S3.
-- Đổi `POSTGRES_VERSION` sang major version mới cần dump/restore.
+- Nâng `POSTGRES_IMAGE` sang major version mới cần dump/restore, không chỉ đổi tag.
 - Không đổi `GARAGE_RPC_SECRET` sau lần chạy đầu tiên.
 - Makefile đọc `SHARED_NETWORK` từ `.env` và ưu tiên hơn biến export trong shell, còn compose thì ưu tiên biến shell. Chỉ để các biến này trong `.env`, đừng export thêm.

@@ -1,0 +1,1 @@
+Tôi đã có LLM model, tôi cần dựng một app chat giống chatgpt web để chat thoải mái. Theo tôi tìm hiểu thì có **LibreChat, Open WebUI,, LobeChat, AnythingLLM. Bạn có đề xuất nào khác không?**

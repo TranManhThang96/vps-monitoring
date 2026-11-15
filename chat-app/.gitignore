@@ -1,0 +1,4 @@
+# .env holds generated secrets and the API key; data/ is the SQLite database,
+# uploads and vector store.
+.env
+data/

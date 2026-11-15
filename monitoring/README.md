@@ -141,7 +141,7 @@ Dashboard PostgreSQL gốc viết cho bản exporter cũ và Postgres trước 1
 - `postgres-exporter` bật thêm collector `postmaster` và `stat_checkpointer` (mặc định tắt), cho panel Start Time và Checkpoint Stats.
 - Panel "Buffers (bgwriter)" và "Checkpoint Stats" đọc `pg_stat_checkpointer_*` thay cho `pg_stat_bgwriter_*`.
 - Hai series `buffers_backend` và `backend_fsync` của panel "Buffers (bgwriter)" đã bị xóa khỏi dashboard: Postgres 17 bỏ hai cột này khỏi `pg_stat_bgwriter` (chuyển sang `pg_stat_io`, exporter chưa xuất).
-- Nếu hạ `POSTGRES_VERSION` xuống dưới 17, các panel checkpoint sẽ trống.
+- Nếu hạ major version Postgres (`POSTGRES_IMAGE`) xuống dưới 17, các panel checkpoint sẽ trống.
 
 Dashboard được mount read-only (`allowUiUpdates: false`): sửa file JSON trong `grafana/dashboards/` rồi `make restart SVC=grafana`.
 

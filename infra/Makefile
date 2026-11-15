@@ -28,7 +28,8 @@ help:
 	@echo "  make ps | logs | pull | config"
 	@echo "  make network              create external network '$(SHARED_NETWORK)' if missing"
 	@echo "  make psql                 psql shell in postgres"
-	@echo "  make db-create NAME=x     create postgres user + database x with a random password"
+	@echo "  make db-create NAME=x     create postgres user + database x with a random password,"
+	@echo "                            plus the pgvector extension (for RAG apps)"
 	@echo "  make pg-monitor-user      create read-only role 'exporter' for postgres-exporter"
 	@echo "  make redis-cli            redis-cli shell"
 	@echo "  make garage-status        garage cluster status"
@@ -141,12 +142,14 @@ db-create:
 	  "CREATE DATABASE $$NAME OWNER $$NAME;" \
 	  "REVOKE CONNECT ON DATABASE $$NAME FROM PUBLIC;" \
 	  | $(PSQL) -q >/dev/null; \
+	$(COMPOSE) exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$(NAME)" -c "CREATE EXTENSION IF NOT EXISTS vector"' >/dev/null; \
 	port=$(or $(POSTGRES_PORT),5432); \
 	echo "Created database and user '$$NAME'. Save the password now, it is not stored anywhere:"; \
 	echo ""; \
 	echo "  user:     $$NAME"; \
 	echo "  password: $$pw"; \
 	echo "  database: $$NAME"; \
+	echo "  extensions: vector (pgvector 0.8.7)"; \
 	echo "  host (native on VPS):       127.0.0.1:$$port"; \
 	echo "  host (container, $(SHARED_NETWORK)): shared-postgres:5432"; \
 	echo ""; \

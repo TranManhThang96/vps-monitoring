@@ -22,7 +22,10 @@ name: infra
 
 services:
   postgres:
-    image: postgres:${POSTGRES_VERSION:-17}-alpine
+    # pgvector/pgvector is the official Postgres image plus the `vector`
+    # extension, which RAG apps (chat-app) need. Same major version and on-disk
+    # format as postgres:17-alpine, so the existing data directory is reused.
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:0.8.7-pg17}
     container_name: shared-postgres
     restart: unless-stopped
     environment:

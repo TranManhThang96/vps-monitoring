@@ -4,3 +4,5 @@ monitoring/.env
 monitoring/secrets/
 agent/.env
 agent/data/
+chat-app/.env
+chat-app/data/

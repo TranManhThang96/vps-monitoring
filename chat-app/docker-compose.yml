@@ -1,0 +1,82 @@
+# Chat app: Open WebUI in front of Command Code's OpenAI-compatible endpoint.
+# All settings come from .env (see .env.example). Manage with `make help`.
+#
+# Users, chats and app config live in SQLite under ./data. RAG embeddings live in
+# the shared Postgres from ../infra (pgvector extension), reached over
+# `shared-net` as shared-postgres:5432 — no database container in this project.
+#
+# The web UI binds to 127.0.0.1 and is published by the host's native nginx,
+# same as ../agent and ../infra.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+name: chat
+
+services:
+  open-webui:
+    image: ${OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.13.3}
+    container_name: chat-open-webui
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      DATA_DIR: /app/backend/data
+      WEBUI_URL: ${WEBUI_URL:?set WEBUI_URL in .env (make init)}
+      WEBUI_AUTH: "true"
+      # Signs JWTs and encrypts stored provider tokens. Rotating it logs
+      # everyone out and makes saved OAuth/MCP tokens unreadable.
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY in .env (make init)}
+      # Headless bootstrap: the first admin is created on startup, then sign-up
+      # stays closed. Extra users are created from the admin panel.
+      ENABLE_SIGNUP: "false"
+      WEBUI_ADMIN_EMAIL: ${WEBUI_ADMIN_EMAIL:?set WEBUI_ADMIN_EMAIL in .env}
+      WEBUI_ADMIN_PASSWORD: ${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD in .env (make init)}
+      DEFAULT_USER_ROLE: ${DEFAULT_USER_ROLE:-pending}
+      # One provider only: Command Code. No local Ollama.
+      ENABLE_OLLAMA_API: "false"
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-https://api.commandcode.ai/provider/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY in .env}
+      # Per-connection settings: pins the model picker to the model you pay for.
+      OPENAI_API_CONFIGS: ${OPENAI_API_CONFIGS:-{}}
+      # RAG embeddings go to the shared Postgres (pgvector extension), not to an
+      # embedded ChromaDB. `make db` provisions the role, database and extension.
+      VECTOR_DB: pgvector
+      PGVECTOR_DB_URL: postgresql://${DB_USER:?set DB_USER in .env}:${DB_PASSWORD:?set DB_PASSWORD in .env (make db)}@${SHARED_POSTGRES_HOST:-shared-postgres}:5432/${DB_NAME:?set DB_NAME in .env}
+      # Fixed vector width, must match the embedding model (all-MiniLM-L6-v2 =
+      # 384) and cannot change after the first indexed document.
+      PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH: ${PGVECTOR_DIM:-384}
+      PGVECTOR_CREATE_EXTENSION: "false"
+      # Vector index: empty = Open WebUI's own default (ivfflat, and it only
+      # creates it once document_chunk holds 50 x PGVECTOR_IVFFLAT_LISTS rows —
+      # searches are an exact scan below that). Set "hnsw" for large corpora.
+      PGVECTOR_INDEX_METHOD: ${PGVECTOR_INDEX_METHOD:-}
+      # Update checks stay off either way. OFFLINE_MODE=true additionally blocks
+      # the HuggingFace download of the RAG embedding model, so document upload
+      # fails at startup; set it to true only if you want no RAG at all.
+      OFFLINE_MODE: ${OFFLINE_MODE:-false}
+      ENABLE_VERSION_UPDATE_CHECK: "false"
+    volumes:
+      - ${DATA_DIR:-./data}:/app/backend/data
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${OPEN_WEBUI_HOST_PORT:-3080}:8080"
+    networks: [default, shared]
+    mem_limit: ${OPEN_WEBUI_MEM_LIMIT:-2g}
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3).status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+networks:
+  default:
+  shared:
+    name: ${SHARED_NETWORK:-shared-net}
+    external: true
